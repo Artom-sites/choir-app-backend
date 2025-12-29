@@ -29,13 +29,19 @@ let upload
 
 if (isCloudinaryConfigured) {
     console.log('📁 Using Cloudinary for file storage')
+    console.log('📁 Cloud name:', process.env.CLOUDINARY_CLOUD_NAME)
+
     const cloudStorage = new CloudinaryStorage({
         cloudinary: cloudinary,
         params: {
             folder: 'choir-songs',
-            resource_type: 'raw', // For PDFs
-            allowed_formats: ['pdf'],
-            public_id: (req, file) => `song_${Date.now()}`
+            resource_type: 'raw', // For PDFs and other files
+            format: 'pdf', // Force PDF format
+            public_id: (req, file) => {
+                const name = `song_${Date.now()}`
+                console.log('📤 Uploading file:', file.originalname, 'as', name)
+                return name
+            }
         }
     })
     upload = multer({ storage: cloudStorage })
