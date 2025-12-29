@@ -41,23 +41,7 @@ export function createBot(token, webappUrl) {
     bot.command('start', async (ctx) => {
         const user = getOrCreateUser(ctx.from)
 
-        const keyboard = createKeyboard()
-
-        const message = `Вітаю, ${ctx.from.first_name}! 🎵
-
-Це бот для хорового репертуару.
-
-📋 Команди:
-/create_choir Назва - Створити хор
-/join КОД - Приєднатися до хору
-/my_choirs - Мої хори
-/help - Допомога`
-
-        if (keyboard) {
-            await ctx.reply(message + '\n\nАбо натисніть кнопку нижче:', { reply_markup: keyboard })
-        } else {
-            await ctx.reply(message)
-        }
+        await ctx.reply(`Вітаю, ${ctx.from.first_name}! 🎵\n\nВикористовуйте кнопку меню нижче щоб відкрити репертуар.`)
     })
 
     // /help command
