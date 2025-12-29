@@ -1,34 +1,65 @@
 import { Router } from 'express'
 import db from '../db/index.js'
 import multer from 'multer'
+import { v2 as cloudinary } from 'cloudinary'
+import { CloudinaryStorage } from 'multer-storage-cloudinary'
 import path from 'path'
-import { nanoid } from 'nanoid'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const router = Router()
 
-// Configure multer for PDF uploads
-const storage = multer.diskStorage({
-    destination: path.join(__dirname, '../../uploads/songs'),
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname)
-        cb(null, `${nanoid()}_${Date.now()}${ext}`)
-    }
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 })
 
-const upload = multer({
-    storage,
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf') {
-            cb(null, true)
-        } else {
-            cb(new Error('Only PDF files allowed'))
+// Check if Cloudinary is configured
+const isCloudinaryConfigured = Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+)
+
+// Configure storage - Cloudinary if available, else local
+let upload
+
+if (isCloudinaryConfigured) {
+    console.log('📁 Using Cloudinary for file storage')
+    const cloudStorage = new CloudinaryStorage({
+        cloudinary: cloudinary,
+        params: {
+            folder: 'choir-songs',
+            resource_type: 'raw', // For PDFs
+            allowed_formats: ['pdf'],
+            public_id: (req, file) => `song_${Date.now()}`
         }
-    },
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB
-})
+    })
+    upload = multer({ storage: cloudStorage })
+} else {
+    console.log('📁 Using local file storage (development mode)')
+    const localStorage = multer.diskStorage({
+        destination: path.join(__dirname, '../../uploads/songs'),
+        filename: (req, file, cb) => {
+            const ext = path.extname(file.originalname)
+            cb(null, `song_${Date.now()}${ext}`)
+        }
+    })
+    upload = multer({
+        storage: localStorage,
+        fileFilter: (req, file, cb) => {
+            if (file.mimetype === 'application/pdf') {
+                cb(null, true)
+            } else {
+                cb(new Error('Only PDF files allowed'))
+            }
+        },
+        limits: { fileSize: 10 * 1024 * 1024 }
+    })
+}
 
 // Middleware to get user
 function getUser(req, res, next) {
@@ -82,7 +113,6 @@ router.get('/', getUser, (req, res) => {
     const params = []
 
     if (choirId) {
-        // Get songs in choir library
         const membership = db.prepare(`
       SELECT * FROM choir_members WHERE choir_id = ? AND user_id = ?
     `).get(choirId, req.user.id)
@@ -195,18 +225,30 @@ router.post('/', getUser, upload.single('pdf'), (req, res) => {
     }
 
     try {
+        // Get file URL - Cloudinary returns full URL, local needs path
+        let pdfUrl = null
+        if (req.file) {
+            if (req.file.path && req.file.path.startsWith('http')) {
+                // Cloudinary URL
+                pdfUrl = req.file.path
+            } else if (req.file.filename) {
+                // Local file
+                pdfUrl = `/uploads/songs/${req.file.filename}`
+            }
+        }
+
         const result = db.prepare(`
       INSERT INTO songs (title, author, pdf_path, key_signature, voices, difficulty, created_by, is_public)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
             title.trim(),
             author?.trim() || null,
-            req.file ? `/uploads/songs/${req.file.filename}` : null,
+            pdfUrl,
             key?.trim() || null,
             voices?.trim() || null,
             difficulty?.trim() || null,
             req.user.id,
-            choirId ? 0 : 1 // Private if for specific choir
+            choirId ? 0 : 1
         )
 
         const songId = result.lastInsertRowid
@@ -228,7 +270,8 @@ router.post('/', getUser, upload.single('pdf'), (req, res) => {
         res.json({
             song: {
                 id: songId,
-                title: title.trim()
+                title: title.trim(),
+                pdfPath: pdfUrl
             }
         })
     } catch (err) {
