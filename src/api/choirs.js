@@ -133,7 +133,77 @@ router.post('/join', getUser, (req, res) => {
     }
 })
 
-// GET /api/choirs/:id - Get choir details
+// GET /api/choirs/search - Search choirs by name
+router.get('/search', getUser, (req, res) => {
+    const { q } = req.query
+
+    if (!q || q.length < 2) {
+        return res.json({ choirs: [] })
+    }
+
+    const choirs = db.prepare(`
+    SELECT c.id, c.name, c.invite_code,
+      (SELECT COUNT(*) FROM choir_members WHERE choir_id = c.id) as member_count
+    FROM choirs c
+    WHERE c.name LIKE ?
+    LIMIT 20
+  `).all(`%${q}%`)
+
+    res.json({
+        choirs: choirs.map(c => ({
+            id: c.id,
+            name: c.name,
+            memberCount: c.member_count
+        }))
+    })
+})
+
+// POST /api/choirs/:id/request-join - Request to join a choir
+router.post('/:id/request-join', getUser, (req, res) => {
+    const { id } = req.params
+
+    const choir = db.prepare('SELECT * FROM choirs WHERE id = ?').get(id)
+
+    if (!choir) {
+        return res.status(404).json({ error: 'Choir not found' })
+    }
+
+    // Check if already member
+    const existing = db.prepare(`
+    SELECT * FROM choir_members WHERE choir_id = ? AND user_id = ?
+  `).get(choir.id, req.user.id)
+
+    if (existing) {
+        return res.json({
+            choir: {
+                id: choir.id,
+                name: choir.name,
+                role: existing.role
+            },
+            alreadyMember: true
+        })
+    }
+
+    try {
+        // Auto-join as member (in future can be pending approval)
+        db.prepare(`
+      INSERT INTO choir_members (choir_id, user_id, role) VALUES (?, ?, 'member')
+    `).run(choir.id, req.user.id)
+
+        res.json({
+            choir: {
+                id: choir.id,
+                name: choir.name,
+                role: 'member'
+            }
+        })
+    } catch (err) {
+        console.error('Error requesting to join choir:', err)
+        res.status(500).json({ error: 'Failed to join choir' })
+    }
+})
+
+
 router.get('/:id', getUser, (req, res) => {
     const { id } = req.params
 
