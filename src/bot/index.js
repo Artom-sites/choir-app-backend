@@ -37,15 +37,10 @@ export function createBot(token, webappUrl) {
         return null
     }
 
-    // /start command
+    // /start command - just register user, no message (Bot Description is shown instead)
     bot.command('start', async (ctx) => {
         getOrCreateUser(ctx.from)
-
-        await ctx.reply(`🎵 Хоровий Репертуар
-
-Застосунок для перегляду нот та репертуару вашого хору.
-
-Натисніть кнопку меню щоб почати.`)
+        // No message - Bot Description stays visible
     })
 
     // /help command
