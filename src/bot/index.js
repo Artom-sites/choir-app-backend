@@ -39,9 +39,13 @@ export function createBot(token, webappUrl) {
 
     // /start command
     bot.command('start', async (ctx) => {
-        const user = getOrCreateUser(ctx.from)
+        getOrCreateUser(ctx.from)
 
-        await ctx.reply(`Вітаю, ${ctx.from.first_name}! 🎵\n\nВикористовуйте кнопку меню нижче щоб відкрити репертуар.`)
+        await ctx.reply(`🎵 Хоровий Репертуар
+
+Застосунок для перегляду нот та репертуару вашого хору.
+
+Натисніть кнопку меню щоб почати.`)
     })
 
     // /help command
