@@ -37,6 +37,7 @@ if (isCloudinaryConfigured) {
             folder: 'choir-songs',
             resource_type: 'raw', // For PDFs and other files
             format: 'pdf', // Force PDF format
+            access_mode: 'public', // Make files publicly accessible
             public_id: (req, file) => {
                 const name = `song_${Date.now()}`
                 console.log('📤 Uploading file:', file.originalname, 'as', name)
