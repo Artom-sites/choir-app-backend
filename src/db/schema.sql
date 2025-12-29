@@ -80,16 +80,18 @@ CREATE TABLE IF NOT EXISTS repertoire_songs (
     PRIMARY KEY (repertoire_id, song_id)
 );
 
--- Insert default categories
+-- Insert default categories (church holidays)
 INSERT OR IGNORE INTO categories (id, name, icon) VALUES
-    (1, 'Літургія', '⛪'),
-    (2, 'Великий Піст', '🕯️'),
-    (3, 'Різдво', '🌟'),
-    (4, 'Великдень', '☀️'),
-    (5, 'Богородичні', '🙏'),
-    (6, 'Концертні', '🎼'),
-    (7, 'Похоронні', '✝️'),
-    (8, 'Причасні', '🍞');
+    (1, 'Різдво', '🌟'),
+    (2, 'Новий Рік', '🎄'),
+    (3, 'Пасха', '☀️'),
+    (4, 'Страждання Христа', '✝️'),
+    (5, 'Свято Жнив', '🌾'),
+    (6, 'Хрещення', '💧'),
+    (7, 'Вознесіння', '☁️'),
+    (8, 'Вїзд в Єрусалим', '🌿'),
+    (9, 'Трійця', '🕊️'),
+    (10, 'Інше', '🎵');
 
 -- Insert demo songs
 INSERT OR IGNORE INTO songs (id, title, author, key_signature, voices, difficulty, is_public) VALUES
