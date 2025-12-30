@@ -376,26 +376,43 @@ router.post('/:songId/send-pdf', getUser, async (req, res) => {
 
 // PUT /api/songs/:id/category - Update song category
 router.put('/:id/category', getUser, (req, res) => {
-    const { id } = req.params
-    const { categoryId } = req.body
+    try {
+        const { id } = req.params
+        const { categoryId } = req.body
 
-    if (!categoryId) {
-        return res.status(400).json({ error: 'Category ID required' })
+        console.log('PUT /api/songs/:id/category - id:', id, 'categoryId:', categoryId)
+
+        if (!categoryId) {
+            return res.status(400).json({ error: 'Category ID required' })
+        }
+
+        const songId = parseInt(id)
+        const catId = parseInt(categoryId)
+
+        // Check song exists
+        const song = db.prepare('SELECT * FROM songs WHERE id = ?').get(songId)
+        if (!song) {
+            return res.status(404).json({ error: 'Song not found' })
+        }
+
+        // Check category exists
+        const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(catId)
+        if (!category) {
+            return res.status(404).json({ error: 'Category not found' })
+        }
+
+        // Remove old categories
+        db.prepare('DELETE FROM song_categories WHERE song_id = ?').run(songId)
+
+        // Add new category
+        db.prepare('INSERT INTO song_categories (song_id, category_id) VALUES (?, ?)').run(songId, catId)
+
+        console.log('Category updated successfully for song', songId)
+        res.json({ success: true })
+    } catch (err) {
+        console.error('Error updating category:', err)
+        res.status(500).json({ error: 'Failed to update category' })
     }
-
-    // Check song exists
-    const song = db.prepare('SELECT * FROM songs WHERE id = ?').get(id)
-    if (!song) {
-        return res.status(404).json({ error: 'Song not found' })
-    }
-
-    // Remove old categories
-    db.prepare('DELETE FROM song_categories WHERE song_id = ?').run(id)
-
-    // Add new category
-    db.prepare('INSERT INTO song_categories (song_id, category_id) VALUES (?, ?)').run(id, categoryId)
-
-    res.json({ success: true })
 })
 
 export default router
