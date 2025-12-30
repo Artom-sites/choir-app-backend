@@ -353,4 +353,28 @@ router.post('/:songId/send-pdf', getUser, async (req, res) => {
     }
 })
 
+// PUT /api/songs/:id/category - Update song category
+router.put('/:id/category', getUser, (req, res) => {
+    const { id } = req.params
+    const { categoryId } = req.body
+
+    if (!categoryId) {
+        return res.status(400).json({ error: 'Category ID required' })
+    }
+
+    // Check song exists
+    const song = db.prepare('SELECT * FROM songs WHERE id = ?').get(id)
+    if (!song) {
+        return res.status(404).json({ error: 'Song not found' })
+    }
+
+    // Remove old categories
+    db.prepare('DELETE FROM song_categories WHERE song_id = ?').run(id)
+
+    // Add new category
+    db.prepare('INSERT INTO song_categories (song_id, category_id) VALUES (?, ?)').run(id, categoryId)
+
+    res.json({ success: true })
+})
+
 export default router
