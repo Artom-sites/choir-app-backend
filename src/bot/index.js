@@ -70,8 +70,30 @@ export function createBot(token, webappUrl) {
                 responseType: 'arraybuffer'
             })
 
-            // 4. Upload to Supabase Storage
-            const filename = `songs/song_${Date.now()}_${doc.file_name}`
+            // 4. Transliterate filename (Supabase doesn't allow Cyrillic)
+            function transliterate(str) {
+                const map = {
+                    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'ye',
+                    'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k', 'л': 'l',
+                    'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+                    'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ь': '',
+                    'ю': 'yu', 'я': 'ya', 'ы': 'y', 'э': 'e', 'ё': 'yo',
+                    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Ґ': 'G', 'Д': 'D', 'Е': 'E', 'Є': 'Ye',
+                    'Ж': 'Zh', 'З': 'Z', 'И': 'Y', 'І': 'I', 'Ї': 'Yi', 'Й': 'Y', 'К': 'K', 'Л': 'L',
+                    'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+                    'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '',
+                    'Ю': 'Yu', 'Я': 'Ya', 'Ы': 'Y', 'Э': 'E', 'Ё': 'Yo'
+                }
+                return str.split('').map(c => map[c] || c).join('')
+            }
+
+            // Sanitize filename: transliterate and replace spaces/special chars
+            const safeFileName = transliterate(doc.file_name)
+                .replace(/\s+/g, '_')
+                .replace(/[^a-zA-Z0-9_.-]/g, '')
+
+            // 5. Upload to Supabase Storage
+            const filename = `songs/song_${Date.now()}_${safeFileName}`
 
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('choir-sheets')
