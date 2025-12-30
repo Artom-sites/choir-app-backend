@@ -169,6 +169,27 @@ router.get('/', getUser, (req, res) => {
     })
 })
 
+// GET /api/songs/uncategorized - Get songs without any category
+router.get('/uncategorized', getUser, (req, res) => {
+    const songs = db.prepare(`
+        SELECT s.* 
+        FROM songs s
+        LEFT JOIN song_categories sc ON s.id = sc.song_id
+        WHERE sc.song_id IS NULL AND s.is_public = 1
+        ORDER BY s.created_at DESC
+    `).all()
+
+    res.json({
+        songs: songs.map(s => ({
+            id: s.id,
+            title: s.title,
+            author: s.author,
+            pdfPath: s.pdf_path,
+            categories: []
+        }))
+    })
+})
+
 // GET /api/songs/categories - Get all categories
 router.get('/categories', (req, res) => {
     const categories = db.prepare('SELECT * FROM categories ORDER BY id').all()

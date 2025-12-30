@@ -2,14 +2,14 @@ import { Bot, InlineKeyboard } from 'grammy'
 import db from '../db/index.js'
 import { nanoid } from 'nanoid'
 import axios from 'axios'
-import { v2 as cloudinary } from 'cloudinary'
+import { createClient } from '@supabase/supabase-js'
 
-// Configure Cloudinary
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-})
+// Configure Supabase
+const supabase = createClient(
+    process.env.SUPABASE_URL || 'https://mjkalxwdgiexwahdldab.supabase.co',
+    process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qa2FseHdkZ2lleHdhaGRsZGFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNDQ3NzMsImV4cCI6MjA4MjYyMDc3M30._EcozQNWbczu0JphEGSS4XtTN99dzGjzLsa0WjmM8Oc'
+)
+
 
 export function createBot(token, webappUrl) {
     const bot = new Bot(token)
@@ -63,97 +63,46 @@ export function createBot(token, webappUrl) {
             const file = await ctx.api.getFile(doc.file_id)
             const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`
 
-            // 3. Download stream
+            // 3. Download as buffer (for Supabase upload)
             const response = await axios({
                 method: 'get',
                 url: fileUrl,
-                responseType: 'stream'
+                responseType: 'arraybuffer'
             })
 
-            // Check if Cloudinary is configured
-            const isCloudinaryReady = process.env.CLOUDINARY_CLOUD_NAME &&
-                process.env.CLOUDINARY_API_KEY &&
-                process.env.CLOUDINARY_API_SECRET
+            // 4. Upload to Supabase Storage
+            const filename = `songs/song_${Date.now()}_${doc.file_name}`
 
-            let publicUrl = ''
-
-            if (isCloudinaryReady) {
-                // 4a. Upload to Cloudinary
-                await new Promise((resolve, reject) => {
-                    const uploadStream = cloudinary.uploader.upload_stream(
-                        {
-                            folder: 'choir-songs',
-                            resource_type: 'auto',
-                            type: 'upload',
-                            public_id: `song_${Date.now()}_${doc.file_name.replace(/\.[^/.]+$/, "")}`
-                        },
-                        (error, result) => {
-                            if (error) reject(error)
-                            else {
-                                publicUrl = result.secure_url
-                                resolve(result)
-                            }
-                        }
-                    )
-                    response.data.pipe(uploadStream)
-                })
-            } else {
-                console.log('⚠️ Cloudinary not configured. Using local storage.')
-                // 4b. Save Locally
-                const fs = await import('fs')
-                const path = await import('path')
-                const { fileURLToPath } = await import('url')
-
-                // ES Modules __dirname equivalent
-                const __filename = fileURLToPath(import.meta.url)
-                const __dirname = path.dirname(__filename)
-
-                const uploadsDir = path.join(__dirname, '../../uploads/choir-songs')
-                if (!fs.existsSync(uploadsDir)) {
-                    fs.mkdirSync(uploadsDir, { recursive: true })
-                }
-
-                const filename = `song_${Date.now()}_${doc.file_name}`
-                const filePath = path.join(uploadsDir, filename)
-                const writer = fs.createWriteStream(filePath)
-
-                response.data.pipe(writer)
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve)
-                    writer.on('error', reject)
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('choir-sheets')
+                .upload(filename, response.data, {
+                    contentType: 'application/pdf',
+                    upsert: true
                 })
 
-                // Construct Local URL (assuming backend is serving /uploads)
-                // Note: WEBAPP_URL might be frontend (5173). We need BACKEND_URL or just current host.
-                // Assuming backend runs on PORT (3000).
-                const port = process.env.PORT || 3000
-                // Use a tunnel URL if available? No, just localhost.
-                publicUrl = `http://localhost:${port}/uploads/choir-songs/${filename}`
+            if (uploadError) {
+                console.error('Supabase upload error:', uploadError)
+                throw new Error('Supabase upload failed')
             }
 
-            // 5. Save to Database
+            // 5. Get public URL
+            const { data: urlData } = supabase.storage
+                .from('choir-sheets')
+                .getPublicUrl(filename)
+
+            const publicUrl = urlData.publicUrl
+
+            // 6. Save to Database (no category assigned - user will assign manually)
             const title = doc.file_name.replace(/\.pdf$/i, '')
             try {
                 const stmt = db.prepare(`
                     INSERT INTO songs (title, pdf_path, is_public, author)
                     VALUES (?, ?, 1, ?)
                 `)
-                const result = stmt.run(title, publicUrl, 'Невідомий')
-                const songId = result.lastInsertRowid
-
-                // Auto-assign to "Інше" category (ID 10)
-                const categoryStmt = db.prepare(`
-                    INSERT INTO song_categories (song_id, category_id)
-                    VALUES (?, 10)
-                `)
-                categoryStmt.run(songId)
+                stmt.run(title, publicUrl, 'Невідомий')
 
                 let msg = `✅ **${title}** збережено!`
-                if (!isCloudinaryReady) {
-                    msg += `\n\n⚠️ Локальне сховище (доступно тільки на цьому ПК).`
-                }
-                msg += `\nПісня додана до категорії "Інше".`
+                msg += `\nПризначте категорію в Mini App.`
 
                 ctx.api.editMessageText(ctx.chat.id, analyzingMsg.message_id, msg)
 
