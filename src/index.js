@@ -21,8 +21,14 @@ if (!BOT_TOKEN) {
     process.exit(1)
 }
 
+// Create Telegram bot first (needed for API)
+const bot = createBot(BOT_TOKEN, WEBAPP_URL)
+
 // Create Express app
 const app = express()
+
+// Store bot instance in app for API access
+app.set('bot', bot)
 
 app.use(cors({
     origin: ['http://localhost:5173', 'http://localhost:3000', WEBAPP_URL],
@@ -49,9 +55,7 @@ app.listen(PORT, () => {
     console.log(`🚀 API server running on http://localhost:${PORT}`)
 })
 
-// Create and start Telegram bot
-const bot = createBot(BOT_TOKEN, WEBAPP_URL)
-
+// Start Telegram bot
 bot.start({
     onStart: (botInfo) => {
         console.log(`🤖 Bot @${botInfo.username} is running!`)

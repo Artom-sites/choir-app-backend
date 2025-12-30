@@ -318,4 +318,39 @@ router.delete('/choir/:choirId/remove/:songId', getUser, checkChoirAdmin, (req, 
     res.json({ success: true })
 })
 
+// POST /api/songs/:songId/send-pdf - Send PDF to user via Telegram bot
+router.post('/:songId/send-pdf', getUser, async (req, res) => {
+    try {
+        const { songId } = req.params
+
+        // Get song
+        const song = db.prepare('SELECT * FROM songs WHERE id = ?').get(songId)
+        if (!song || !song.pdf_path) {
+            return res.status(404).json({ error: 'Song or PDF not found' })
+        }
+
+        // Get user's telegram_id
+        const telegramId = req.user.telegram_id
+        if (!telegramId) {
+            return res.status(400).json({ error: 'Telegram ID not found' })
+        }
+
+        // Get bot instance from app
+        const bot = req.app.get('bot')
+        if (!bot) {
+            return res.status(500).json({ error: 'Bot not configured' })
+        }
+
+        // Send document via bot
+        await bot.api.sendDocument(telegramId, song.pdf_path, {
+            caption: `🎵 ${song.title}${song.author ? `\n👤 ${song.author}` : ''}`
+        })
+
+        res.json({ success: true, message: 'PDF sent to Telegram' })
+    } catch (err) {
+        console.error('Error sending PDF:', err)
+        res.status(500).json({ error: 'Failed to send PDF' })
+    }
+})
+
 export default router

@@ -1,6 +1,15 @@
 import { Bot, InlineKeyboard } from 'grammy'
 import db from '../db/index.js'
 import { nanoid } from 'nanoid'
+import axios from 'axios'
+import { v2 as cloudinary } from 'cloudinary'
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+})
 
 export function createBot(token, webappUrl) {
     const bot = new Bot(token)
@@ -36,6 +45,122 @@ export function createBot(token, webappUrl) {
         }
         return null
     }
+
+    // PDF Upload Handler
+    bot.on('message:document', async (ctx) => {
+        const doc = ctx.message.document
+        const mimeType = doc.mime_type
+
+        // 1. Validate PDF
+        if (mimeType !== 'application/pdf') {
+            return ctx.reply('❌ Будь ласка, надішліть PDF файл.')
+        }
+
+        const analyzingMsg = await ctx.reply('⏳ Отримано PDF. Обробка...')
+
+        try {
+            // 2. Get file link from Telegram
+            const file = await ctx.api.getFile(doc.file_id)
+            const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`
+
+            // 3. Download stream
+            const response = await axios({
+                method: 'get',
+                url: fileUrl,
+                responseType: 'stream'
+            })
+
+            // Check if Cloudinary is configured
+            const isCloudinaryReady = process.env.CLOUDINARY_CLOUD_NAME &&
+                process.env.CLOUDINARY_API_KEY &&
+                process.env.CLOUDINARY_API_SECRET
+
+            let publicUrl = ''
+
+            if (isCloudinaryReady) {
+                // 4a. Upload to Cloudinary
+                await new Promise((resolve, reject) => {
+                    const uploadStream = cloudinary.uploader.upload_stream(
+                        {
+                            folder: 'choir-songs',
+                            resource_type: 'auto',
+                            type: 'upload',
+                            public_id: `song_${Date.now()}_${doc.file_name.replace(/\.[^/.]+$/, "")}`
+                        },
+                        (error, result) => {
+                            if (error) reject(error)
+                            else {
+                                publicUrl = result.secure_url
+                                resolve(result)
+                            }
+                        }
+                    )
+                    response.data.pipe(uploadStream)
+                })
+            } else {
+                console.log('⚠️ Cloudinary not configured. Using local storage.')
+                // 4b. Save Locally
+                const fs = await import('fs')
+                const path = await import('path')
+                const { fileURLToPath } = await import('url')
+
+                // ES Modules __dirname equivalent
+                const __filename = fileURLToPath(import.meta.url)
+                const __dirname = path.dirname(__filename)
+
+                const uploadsDir = path.join(__dirname, '../../uploads/choir-songs')
+                if (!fs.existsSync(uploadsDir)) {
+                    fs.mkdirSync(uploadsDir, { recursive: true })
+                }
+
+                const filename = `song_${Date.now()}_${doc.file_name}`
+                const filePath = path.join(uploadsDir, filename)
+                const writer = fs.createWriteStream(filePath)
+
+                response.data.pipe(writer)
+
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve)
+                    writer.on('error', reject)
+                })
+
+                // Construct Local URL (assuming backend is serving /uploads)
+                // Note: WEBAPP_URL might be frontend (5173). We need BACKEND_URL or just current host.
+                // Assuming backend runs on PORT (3000).
+                const port = process.env.PORT || 3000
+                // Use a tunnel URL if available? No, just localhost.
+                publicUrl = `http://localhost:${port}/uploads/choir-songs/${filename}`
+            }
+
+            // 5. Save to Database
+            const title = doc.file_name.replace(/\.pdf$/i, '')
+            try {
+                const stmt = db.prepare(`
+                    INSERT INTO songs (title, pdf_path, is_public, author)
+                    VALUES (?, ?, 1, ?)
+                `)
+                stmt.run(title, publicUrl, 'Невідомий')
+
+                let msg = `✅ **${title}** збережено!`
+                if (!isCloudinaryReady) {
+                    msg += `\n\n⚠️ Локальне сховище (доступно тільки на цьому ПК).`
+                }
+                msg += `\nТепер ви можете знайти пісню в Бібліотеці.`
+
+                ctx.api.editMessageText(ctx.chat.id, analyzingMsg.message_id, msg)
+
+            } catch (dbError) {
+                console.error('DB save error:', dbError)
+                ctx.api.editMessageText(ctx.chat.id, analyzingMsg.message_id, '❌ Помилка збереження в базу даних.')
+            }
+
+        } catch (err) {
+            console.error('Bot upload error:', err)
+            let errMsg = '❌ Помилка обробки файлу.'
+            if (err.message && err.message.includes('Cloudinary')) errMsg = '❌ Помилка Cloudinary.'
+            ctx.api.editMessageText(ctx.chat.id, analyzingMsg.message_id, errMsg)
+        }
+    })
 
     // /start command - just register user, no message (Bot Description is shown instead)
     bot.command('start', async (ctx) => {
