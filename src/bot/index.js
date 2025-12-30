@@ -139,13 +139,21 @@ export function createBot(token, webappUrl) {
                     INSERT INTO songs (title, pdf_path, is_public, author)
                     VALUES (?, ?, 1, ?)
                 `)
-                stmt.run(title, publicUrl, 'Невідомий')
+                const result = stmt.run(title, publicUrl, 'Невідомий')
+                const songId = result.lastInsertRowid
+
+                // Auto-assign to "Інше" category (ID 10)
+                const categoryStmt = db.prepare(`
+                    INSERT INTO song_categories (song_id, category_id)
+                    VALUES (?, 10)
+                `)
+                categoryStmt.run(songId)
 
                 let msg = `✅ **${title}** збережено!`
                 if (!isCloudinaryReady) {
                     msg += `\n\n⚠️ Локальне сховище (доступно тільки на цьому ПК).`
                 }
-                msg += `\nТепер ви можете знайти пісню в Бібліотеці.`
+                msg += `\nПісня додана до категорії "Інше".`
 
                 ctx.api.editMessageText(ctx.chat.id, analyzingMsg.message_id, msg)
 
